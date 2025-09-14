@@ -172,13 +172,34 @@ class ClipboardGUI:
     def refresh_history(self):
         self.history_listbox.delete(0, tk.END)
         history = self.clipboard_manager.history
-        
+
         for i, item in enumerate(history):
             timestamp = datetime.fromisoformat(item['timestamp']).strftime('%H:%M:%S')
-            preview = item['preview'].replace('\n', '\\n').replace('\t', '\\t')
+            
+            # Clean and truncate to single line
+            content = item['content']
+            # Replace newlines, returns, tabs with spaces
+            content_clean = content.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+            # Collapse multiple spaces into single space
+            content_clean = ' '.join(content_clean.split())
+            # Truncate to 80 characters, keep beginning
+            if len(content_clean) > 80:
+                preview = content_clean[:77] + "..."
+            else:
+                preview = content_clean
+
             display_text = f"[{timestamp}] {preview}"
+            # Ensure no newlines sneak in (final safety)
+            display_text = display_text.replace('\n', ' ').replace('\r', '')
             self.history_listbox.insert(tk.END, display_text)
-    
+
+        # Auto-select first item if any exist
+        if self.history_listbox.size() > 0:
+            self.history_listbox.selection_set(0)
+            self.history_listbox.activate(0)
+            self.history_listbox.see(0)
+            self.history_listbox.focus_set()
+     
     def copy_selected(self):
         selection = self.history_listbox.curselection()
         if selection:
@@ -186,14 +207,11 @@ class ClipboardGUI:
             history = self.clipboard_manager.history
             if index < len(history):
                 text = history[index]['content']
-                if self.clipboard_manager.copy_to_clipboard(text):
-                    messagebox.showinfo("Copied", "Text copied to clipboard!")
-                else:
-                    messagebox.showerror("Error", "Failed to copy to clipboard!")
     
     def on_double_click(self, event):
         self.copy_selected()
-        self.root.quit()  # Close window after copying
+        self.root.after(50, self._simulate_paste)
+        self.root.quit()
     
     def on_arrow_key(self, event):
         """Handle Up/Down arrow keys for navigation."""
@@ -219,9 +237,22 @@ class ClipboardGUI:
 
 
     def on_enter_key(self, event):
-        """Handle Enter key: copy selected and close."""
-        self.copy_selected()
+        selection = self.history_listbox.curselection()
+        if not selection:
+            return
+        index = selection[0]
+        if index >= len(self.clipboard_manager.history):
+            return
+        text = self.clipboard_manager.history[index]['content']
+        self.clipboard_manager.set_clipboard(text)  # Skip copy_selected, no messagebox
+        self.root.after(300, self._simulate_paste)
         self.root.quit()
+
+    def _simulate_paste(self):
+        try:
+            subprocess.run(['xdotool', 'key', 'ctrl+v'], check=True)
+        except Exception as e:
+            print(f"Failed to simulate paste: {e}")
 
     def clear_history(self):
         if messagebox.askyesno("Confirm", "Clear all clipboard history?"):
@@ -230,7 +261,19 @@ class ClipboardGUI:
         self.refresh_history()
     
     def run(self):
+        # After window is shown, force focus
+        self.root.after(100, self._grab_focus)
         self.root.mainloop()
+
+    def _grab_focus(self):
+        """Force focus on window and listbox after GUI is visible."""
+        self.root.focus_force()  # Force focus on window
+        self.history_listbox.focus_set()  # Focus on listbox
+        # Ensure first item is selected (in case refresh happened before focus)
+        if self.history_listbox.size() > 0:
+            self.history_listbox.selection_set(0)
+            self.history_listbox.activate(0)
+            self.history_listbox.see(0)
 
 def main():
     parser = argparse.ArgumentParser(description='Linux Clipboard History Manager')
