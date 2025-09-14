@@ -13,8 +13,10 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+
+
 class ClipboardHistory:
-    def __init__(self, max_items=50):
+    def __init__(self, max_items=100):
         self.max_items = max_items
         self.history_file = Path.home() / '.clipboard_history.json'
         self.history = self.load_history()
@@ -106,14 +108,61 @@ class ClipboardHistory:
             return True
         return False
 
+
+
+def check_appearance():
+    """Checks if macOS is in dark mode."""
+    cmd = 'defaults read -g AppleInterfaceStyle'
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE, shell=True)
+    return bool(p.communicate()[0])  # True if Dark Mode, False if Light
+
+def apply_theme(style, dark_mode, listbox):
+    """Apply light/dark theme without changing base theme (macOS safe)."""
+    if dark_mode:
+        bg = "#2B2B2B"
+        fg = "white"
+        btn_bg = "#3C3C3C"
+        btn_fg = "white"
+        active_bg = "#505050"
+    else:
+        bg = "white"
+        fg = "black"
+        btn_bg = "#E0E0E0"
+        btn_fg = "black"
+        active_bg = "#C0C0C0"
+
+    # ttk styles
+    style.configure("TFrame", background=bg)
+    style.configure("TLabel", background=bg, foreground=fg)
+    style.configure("TButton", background=btn_bg, foreground=btn_fg)
+    style.map("TButton", background=[("active", active_bg)])
+
+    # Plain tk widgets (like Listbox) must be colored manually
+    listbox.configure(bg=bg, fg=fg, selectbackground=active_bg, selectforeground=fg)
+
+
 class ClipboardGUI:
     def __init__(self, clipboard_manager):
         self.clipboard_manager = clipboard_manager
         self.root = tk.Tk()
-        self.root.title("Clipboard History")
         self.root.geometry("600x400")
+        
+        # Capture the ID of the window that launched the GUI
+        self.previous_window_id = self.get_active_window_id()
+        dark = check_appearance()
+        #apply_theme(self.style, dark, self.history_listbox)
         self.setup_ui()
         
+    def get_active_window_id(self):
+        try:
+            result = subprocess.run(['xdotool', 'getactivewindow'], 
+                                    capture_output=True, text=True, check=True)
+            return result.stdout.strip()
+        except Exception as e:
+            print(f"Error getting active window ID: {e}")
+            return None
+
     def setup_ui(self):
         # Main frame
         main_frame = ttk.Frame(self.root, padding="10")
@@ -168,7 +217,8 @@ class ClipboardGUI:
         
         # Load initial history
         self.refresh_history()
-        
+
+
     def refresh_history(self):
         self.history_listbox.delete(0, tk.END)
         history = self.clipboard_manager.history
@@ -214,30 +264,30 @@ class ClipboardGUI:
         self.root.quit()
     
     def on_arrow_key(self, event):
-            """Handle Up/Down arrow keys for navigation."""
-            current_active = self.history_listbox.winfo_parent().selection_includes()
-            if not current_active:
-                # If nothing is active, activate the first item
-                if self.history_listbox.size() > 0:
-                    self.history_listbox.selection_set(0)
-                    self.history_listbox.activate(0)
-                    self.history_listbox.see(0)
-                return
+        """Handle Up/Down arrow keys for navigation."""
+        current_active = self.history_listbox.winfo_parent().selection_includes()
+        if not current_active:
+            # If nothing is active, activate the first item
+            if self.history_listbox.size() > 0:
+                self.history_listbox.selection_set(0)
+                self.history_listbox.activate(0)
+                self.history_listbox.see(0)
+            return
 
-            current_index = self.history_listbox.index(current_active)
-            next_index = current_index
+        current_index = self.history_listbox.index(current_active)
+        next_index = current_index
 
-            if event.keysym == 'Up':
-                next_index = max(0, current_index - 1)
-            elif event.keysym == 'Down':
-                next_index = min(self.history_listbox.size() - 1, current_index + 1)
-            
-            # Clear the entire selection first to be safe
-            self.history_listbox.selection_clear(0, tk.END)
-            # Set the new selection and activate the same item
-            self.history_listbox.selection_set(next_index)
-            self.history_listbox.activate(next_index)
-            self.history_listbox.see(next_index)  # Ensure the new selection is visible
+        if event.keysym == 'Up':
+            next_index = max(0, current_index - 1)
+        elif event.keysym == 'Down':
+            next_index = min(self.history_listbox.size() - 1, current_index + 1)
+        
+        # Clear the entire selection first to be safe
+        self.history_listbox.selection_clear(0, tk.END)
+        # Set the new selection and activate the same item
+        self.history_listbox.selection_set(next_index)
+        self.history_listbox.activate(next_index)
+        self.history_listbox.see(next_index)  # Ensure the new selection is visible
 
     def on_enter_key(self, event):
         selection = self.history_listbox.curselection()
@@ -247,15 +297,25 @@ class ClipboardGUI:
         if index >= len(self.clipboard_manager.history):
             return
         text = self.clipboard_manager.history[index]['content']
-        self.clipboard_manager.set_clipboard(text)  # Skip copy_selected, no messagebox
-        self.root.after(300, self._simulate_paste)
+        self.clipboard_manager.set_clipboard(text)  # Sets the clipboard content
+        
+        # Give the system a moment to register the new clipboard content
+        self.root.after(500, self._simulate_paste)
+        
+        # Close the GUI window immediately after the command is queued
         self.root.quit()
 
     def _simulate_paste(self):
         try:
-            subprocess.run(['xdotool', 'key', 'ctrl+v'], check=True)
+            if self.previous_window_id:
+                # Switch focus back to the original window
+                subprocess.run(['xdotool', 'windowactivate', '--sync', self.previous_window_id], check=True)
+            
+            # Now, simulate the paste command
+            # Use Ctrl+Shift+V for most terminals, or Shift+Insert as an alternative
+            subprocess.run(['xdotool', 'key', 'ctrl+shift+v'], check=True)
         except Exception as e:
-            print(f"Failed to simulate paste: {e}")
+            print(f"Failed to paste: {e}")
 
     def clear_history(self):
         if messagebox.askyesno("Confirm", "Clear all clipboard history?"):
@@ -277,6 +337,7 @@ class ClipboardGUI:
             self.history_listbox.selection_set(0)
             self.history_listbox.activate(0)
             self.history_listbox.see(0)
+
 
 def main():
     parser = argparse.ArgumentParser(description='Linux Clipboard History Manager')
