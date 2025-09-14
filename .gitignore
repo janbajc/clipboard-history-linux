@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# History data (don't share this — it's personal clipboard content!)
+~/.clipboard_history.json
+.clipboard_history.json
+
+# Logs
+*.log
+
+# Local config (if you add later)
+config.json
+.env
+.venv
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*~
