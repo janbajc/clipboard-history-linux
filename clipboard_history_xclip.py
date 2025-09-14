@@ -214,27 +214,30 @@ class ClipboardGUI:
         self.root.quit()
     
     def on_arrow_key(self, event):
-        """Handle Up/Down arrow keys for navigation."""
-        current_selection = self.history_listbox.curselection()
-        if not current_selection:
-            # If nothing selected, select first item
-            self.history_listbox.selection_set(0)
-            self.history_listbox.activate(0)
-            return
+            """Handle Up/Down arrow keys for navigation."""
+            current_active = self.history_listbox.winfo_parent().selection_includes()
+            if not current_active:
+                # If nothing is active, activate the first item
+                if self.history_listbox.size() > 0:
+                    self.history_listbox.selection_set(0)
+                    self.history_listbox.activate(0)
+                    self.history_listbox.see(0)
+                return
 
-        current_index = current_selection[0]
-        if event.keysym == 'Up' and current_index > 0:
-            next_index = current_index - 1
-        elif event.keysym == 'Down' and current_index < self.history_listbox.size() - 1:
-            next_index = current_index + 1
-        else:
-            return  # Don't go out of bounds
+            current_index = self.history_listbox.index(current_active)
+            next_index = current_index
 
-        self.history_listbox.selection_clear(0, tk.END)
-        self.history_listbox.selection_set(next_index)
-        self.history_listbox.activate(next_index)
-        self.history_listbox.see(next_index)  # Scroll to item if needed
-
+            if event.keysym == 'Up':
+                next_index = max(0, current_index - 1)
+            elif event.keysym == 'Down':
+                next_index = min(self.history_listbox.size() - 1, current_index + 1)
+            
+            # Clear the entire selection first to be safe
+            self.history_listbox.selection_clear(0, tk.END)
+            # Set the new selection and activate the same item
+            self.history_listbox.selection_set(next_index)
+            self.history_listbox.activate(next_index)
+            self.history_listbox.see(next_index)  # Ensure the new selection is visible
 
     def on_enter_key(self, event):
         selection = self.history_listbox.curselection()
